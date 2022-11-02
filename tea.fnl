@@ -64,15 +64,20 @@
 (fn tea.get [self path handler]
   (tset self :handlers :get path handler))
 
+(fn tea.handle-client [self client]
+  (let [_ (client:settimeout 10)
+        lines (icollect [line (line-iter client)]
+                line)
+        request (parse-request lines) ; request (read-request client header)
+        response (self:handle-request request)]
+    (client:send response)
+    (client:close)))
+
 (fn tea.start [self]
   (while true
     (let [client (server:accept)
-          _ (client:settimeout 10)
-          lines (icollect [line (line-iter client)]
-                  line)
-          request (parse-request lines) ; request (read-request client header)
-          response (self:handle-request request)]
-      (client:send response)
-      (client:close))))
+          co (coroutine.create self.handle-client)]
+      (coroutine.resume co self client))))
+
 
 tea
