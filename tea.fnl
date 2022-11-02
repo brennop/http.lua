@@ -8,24 +8,11 @@
         (fn [x]
           (print ((. (require :fennel) :view) x))))
 
-(fn find [tbl matcher]
-  (accumulate [result nil key value (pairs tbl)]
-    (match [result (matcher key)]
-      [nil _] [key value]
-      [nil nil] nil
-      [[_key _value] b]
-      (if (> (length (matcher _key)) (matcher b)) [_key _value] [key value]))))
-
-(fn first [[value & _]]
-  value)
-(fn find-handler [tbl matcher]
-  (-> (doto (icollect [key value (pairs tbl)]
-              (match (matcher key)
-                matched [value (length matched)]))
-        (table.sort (fn [[_ a] [_ b]]
-                      (> a b))))
-      (first)
-      (first)))
+;; will return only the handler and not the matches
+(fn match-handler [handlers str]
+  (accumulate [result nil pattern handler (pairs handlers) &until (not= result
+                                                                        nil)]
+    (if (string.match str (.. pattern "$")) [pattern handler])))
 
 (fn line-iter [client]
   (fn [_ control]
@@ -62,8 +49,10 @@
 
 (fn tea.handle-get [self req]
   (let [{: method : uri} req]
-    (match (find self.handlers.get #(uri:match $))
-      handler (serialize 200 (handler req (uri:match)))
+    (match (match-handler self.handlers.get uri)
+      [pattern handler] (match (pcall handler req (uri:match pattern))
+                          (false status) (serialize status nil)
+                          (true data) (serialize 200 data))
       nil "HTTP/1.1 404 Not Found\r\n")))
 
 (fn tea.handle-request [self req]

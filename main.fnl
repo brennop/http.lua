@@ -6,6 +6,6 @@
 (local tea (require :tea))
 
 (tea:get "/" #"Hello World")
-(tea:get "/:name" #"New")
+(tea:get "/(%w+)" (fn [req data] (.. "Hello " data)))
 
 (tea:start)
