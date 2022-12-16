@@ -12,8 +12,8 @@ Drop in a project and require it
 
 `http.get("/", function() return "Hello World" end)`
 
-Where pattern is a lua pattern match, and handler is a function that returns
-either a message, or a table with a status and a body.
+Register a GET handler, Where pattern is a lua pattern match, and handler is a
+function that returns either a message, or a table with a status and a body.
 
 #### http.listen(port)
 
