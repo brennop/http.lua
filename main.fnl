@@ -1,11 +1,13 @@
-;; TODO: handle errors
-(fn handle-get [uri]
-  (with-open [file (io.open uri)]
+(local http (require :http))
+
+(fn read-file [filename]
+  (with-open [file (io.open filename)]
     (file:read :a)))
 
-(local tea (require :tea))
+(http.get "/" #"Hello World")
+(http.get "/(%g+).md" (fn [req name]
+                    (match (pcall read-file (.. name ".md"))
+                      (true content) {:status 200 :body content}
+                      (false _) {:status 404 :body ""})))
 
-(tea:get "/" #"Hello World")
-(tea:get "/(%w+)" (fn [req data] (.. "Hello " data)))
-
-(tea:start)
+(http.listen 8080)
