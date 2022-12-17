@@ -48,10 +48,10 @@ function h.render(node)
   return string.format("<%s%s>%s</%s>", node.tag, table.concat(attrs), table.concat(children, ""), node.tag)
 end
 
-function h.html(title, node, head)
+function h.html(data)
   local heads = {}
-  for i, child in ipairs(head or {}) do heads[i] = h.render(child) end
-  return document:format(title, table.concat(heads, "\n"), h.render(node))
+  for i, child in ipairs(data.head or {}) do heads[i] = h.render(child) end
+  return document:format(data.title, table.concat(heads, "\n"), h.render(data.body))
 end
 
 return h
