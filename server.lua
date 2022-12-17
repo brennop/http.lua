@@ -95,10 +95,13 @@ function http.listen(port)
     local client = server:accept()
     coroutine.wrap(wrapper)(client)
   end
+
+  print("Server listening on port " .. port)
 end
 
 function http.get(pattern, handler)
   http.handlers["GET " .. pattern] = handler
+  return http
 end
 
 return http

@@ -1,4 +1,4 @@
-local h = {}
+local m = {}
 
 local document = [[
 <!DOCTYPE html>
@@ -14,7 +14,7 @@ local document = [[
 </html>
 ]]
 
-setmetatable(h, {
+setmetatable(m, {
   __index = function(_, tag)
     return function(data)
       local children = {}
@@ -37,25 +37,29 @@ setmetatable(h, {
   end
 })
 
-function h.render(node)
+function m.render(node)
   if type(node) == "string" then
     return node
   end
   local attrs = {}
   for k, v in pairs(node.attrs) do
-    table.insert(attrs, string.format(' %s="%s"', k, v))
+    if v == true then
+      attrs[#attrs + 1] = string.format(" %s", k)
+    else
+      attrs[#attrs + 1] = string.format(' %s="%s"', k, v)
+    end
   end
   local children = {}
   for _, child in ipairs(node.children) do
-    table.insert(children, h.render(child))
+    table.insert(children, m.render(child))
   end
   return string.format("<%s%s>%s</%s>", node.tag, table.concat(attrs), table.concat(children, ""), node.tag)
 end
 
-function h.html(data)
+function m.html(data)
   local heads = {}
-  for i, child in ipairs(data.head or {}) do heads[i] = h.render(child) end
-  return document:format(data.title, table.concat(heads, "\n"), h.render(data.body))
+  for i, child in ipairs(data.head or {}) do heads[i] = m.render(child) end
+  return document:format(data.title, table.concat(heads, "\n"), m.render(data.body))
 end
 
-return h
+return m
