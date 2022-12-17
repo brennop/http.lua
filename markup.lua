@@ -20,12 +20,16 @@ setmetatable(h, {
       local children = {}
       local attrs = {}
 
-      for k, v in pairs(data) do
-        if type(k) == "number" then
-          children[k] = v
-        else
-          attrs[k] = v
+      if type(data) == "table" then
+        for k, v in pairs(data) do
+          if type(k) == "number" then
+            children[k] = v
+          else
+            attrs[k] = v
+          end
         end
+      else
+        children = {data}
       end
 
       return {tag = tag, attrs = attrs, children = children}

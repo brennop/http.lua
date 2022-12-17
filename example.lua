@@ -1,4 +1,4 @@
-local http = require "http"
+local http = require "server"
 local markup = require "markup"
 
 local html, div, p = markup.html, markup.div, markup.p
