@@ -42,7 +42,7 @@ local function match_handler(pattern)
     end
   end
 
-  return { status = 404, body = "" }
+  return { status = 404, body = "Not Found" }
 end
 
 local function serialize(status, body)
