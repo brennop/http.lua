@@ -41,6 +41,7 @@ function m.render(node)
   if type(node) == "string" then
     return node
   end
+
   local attrs = {}
   for k, v in pairs(node.attrs) do
     if v == true then
@@ -53,7 +54,12 @@ function m.render(node)
   for _, child in ipairs(node.children) do
     table.insert(children, m.render(child))
   end
-  return string.format("<%s%s>%s</%s>", node.tag, table.concat(attrs), table.concat(children, ""), node.tag)
+
+  if node.tag == "fragment" then
+    return table.concat(children)
+  end
+
+  return string.format("<%s%s>%s</%s>", node.tag, table.concat(attrs), table.concat(children), node.tag)
 end
 
 function m.html(data)
