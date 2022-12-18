@@ -48,9 +48,15 @@ end
 local function serialize(status, body)
   local message = messages[status] or "Unknown"
 
+  local headers = {
+    "Content-Length: " .. #body,
+    "Connection: keep-alive",
+    "Keep-Alive: timeout=5",
+  }
+
   local response = {
     "HTTP/1.1 " .. status .. " " .. message,
-    "Content-Length: " .. #body,
+    table.concat(headers, "\r\n"),
     "",
     body,
   }
@@ -59,11 +65,23 @@ local function serialize(status, body)
 end
 
 local function handle_client(client)
-  local pattern, version = 
-    client:receive():match("(%u+%s[%p%w]+)%s(HTTP/1.1)")
+  local line = client:receive()
+
+  if not line then
+    return
+  end
+
+  local pattern, version = line:match("(%u+%s[%p%w]+)%s(HTTP/1.1)")
 
   -- ignore headers for now
-  for line in function() client:receive() end do end
+  for line in function() 
+    local line = client:receive() 
+    if line == "" then
+      return nil
+    end
+    return line
+  end do 
+  end
 
   local data = match_handler(pattern)
 
@@ -76,16 +94,24 @@ local function handle_client(client)
   end
 
   client:send(response)
+  return true
 end
 
 local function wrapper(client)
-  client:settimeout(5)
-  ok, err = pcall(handle_client, client)
-  if not ok then
-    -- TODO: log errors
-    client:send(serialize(500, err))
+  while true do
+    client:settimeout(5)
+    local success, data = pcall(handle_client, client)
+
+    print(data)
+
+    if not success then
+      client:send(serialize(500, data))
+    end
+
+    if not data then
+      return
+    end
   end
-  client:close()
 end
 
 function http.listen(port)
