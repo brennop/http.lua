@@ -45,14 +45,18 @@ local function match_handler(pattern)
   return { status = 404, body = "Not Found" }
 end
 
-local function serialize(status, body)
-  local message = messages[status] or "Unknown"
+local function serialize(data)
+  local message = messages[data.status] or "Unknown"
+
+  local headers = {
+    "Content-Length: " .. #data.body,
+  }
 
   local response = {
-    "HTTP/1.1 " .. status .. " " .. message,
-    "Content-Length: " .. #body,
+    "HTTP/1.1 " .. data.status .. " " .. message,
+    table.concat(headers, "\r\n") .. "\r\n" .. table.concat(data.headers or {}, "\r\n"),
     "",
-    body,
+    data.body,
   }
 
   return table.concat(response, "\r\n")
@@ -70,9 +74,9 @@ local function handle_client(client)
   local response = ""
 
   if type(data) == "table" then
-    response = serialize(data.status, data.body or "")
+    response = serialize(data)
   else
-    response = serialize(200, data)
+    response = serialize({ status = 200, body = data })
   end
 
   client:send(response)
@@ -83,7 +87,7 @@ local function wrapper(client)
   ok, err = pcall(handle_client, client)
   if not ok then
     -- TODO: log errors
-    client:send(serialize(500, err))
+    client:send(serialize({ status = 500, body = err }))
   end
   client:close()
 end
