@@ -50,11 +50,12 @@ local function serialize(data)
 
   local headers = {
     "Content-Length: " .. #data.body,
+    "Connection: close",
   }
 
   local response = {
     "HTTP/1.1 " .. data.status .. " " .. message,
-    table.concat(headers, "\r\n") .. "\r\n" .. table.concat(data.headers or {}, "\r\n"),
+    table.concat(headers, "\r\n") .. table.concat(data.headers or {}, "\r\n"),
     "",
     data.body,
   }
@@ -82,25 +83,29 @@ local function handle_client(client)
   client:send(response)
 end
 
-local function wrapper(client)
-  client:settimeout(5)
-  ok, err = pcall(handle_client, client)
-  if not ok then
-    -- TODO: log errors
-    client:send(serialize({ status = 500, body = err }))
-  end
-  client:close()
-end
-
 function http.listen(port)
-  local server = socket.bind("*", port or 3000)
+  local server = nil
+
+  while not server do
+    server = socket.bind("*", port or 3000)
+    port = port + 1
+  end
+
+  print("Server listening on port " .. port - 1)
 
   while true do
     local client = server:accept()
-    coroutine.wrap(wrapper)(client)
-  end
 
-  print("Server listening on port " .. port)
+    client:settimeout(5)
+    local ok, err = pcall(handle_client, client)
+
+    if not ok then
+      -- TODO: log errors
+      client:send(serialize({ status = 500, body = err }))
+    end
+
+    client:close()
+  end
 end
 
 function http.get(pattern, handler)
