@@ -25,9 +25,6 @@
 --
 
 local socket = require "socket"
-local scheduler = require "scheduler"
-
-sched = scheduler.Scheduler()
 
 local http = { handlers = { } }
 
@@ -86,33 +83,29 @@ local function handle_client(client)
   client:send(response)
 end
 
-local function wrapper(client)
-  client:settimeout(5)
-  ok, err = pcall(handle_client, client)
-  if not ok then
-    -- TODO: log errors
-    client:send(serialize({ status = 500, body = err }))
-  end
-  client:close()
-end
-
 function http.listen(port)
-  local server = socket.bind("*", port or 3000)
+  local server = nil
 
-  -- make non-blocking
-  server:settimeout(0)
+  while not server do
+    server = socket.bind("*", port or 3000)
+    port = port + 1
+  end
+
+  print("Server listening on port " .. port - 1)
 
   while true do
-    local worked, err = sched:select()
-
     local client = server:accept()
 
-    if client then
-      sched:spawn(wrapper, client)
-    end
-  end
+    client:settimeout(5)
+    local ok, err = pcall(handle_client, client)
 
-  print("Server listening on port " .. port)
+    if not ok then
+      -- TODO: log errors
+      client:send(serialize({ status = 500, body = err }))
+    end
+
+    client:close()
+  end
 end
 
 function http.get(pattern, handler)
