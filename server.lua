@@ -25,6 +25,9 @@
 --
 
 local socket = require "socket"
+local scheduler = require "scheduler"
+
+sched = scheduler.Scheduler()
 
 local http = { handlers = { } }
 
@@ -50,6 +53,7 @@ local function serialize(data)
 
   local headers = {
     "Content-Length: " .. #data.body,
+    "Connection: close",
   }
 
   local response = {
@@ -95,9 +99,17 @@ end
 function http.listen(port)
   local server = socket.bind("*", port or 3000)
 
+  -- make non-blocking
+  server:settimeout(0)
+
   while true do
+    local worked, err = sched:select()
+
     local client = server:accept()
-    coroutine.wrap(wrapper)(client)
+
+    if client then
+      sched:spawn(wrapper, client)
+    end
   end
 
   print("Server listening on port " .. port)
