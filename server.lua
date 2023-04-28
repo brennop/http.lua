@@ -54,7 +54,7 @@ local function serialize(data)
 
   local response = {
     "HTTP/1.1 " .. data.status .. " " .. message,
-    table.concat(headers, "\r\n") .. "\r\n" .. table.concat(data.headers or {}, "\r\n"),
+    table.concat(headers, "\r\n") .. table.concat(data.headers or {}, "\r\n"),
     "",
     data.body,
   }
