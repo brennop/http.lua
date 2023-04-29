@@ -42,6 +42,9 @@ local function match_handler(pattern)
       local params = { }
       if query then
         for k, v in query:gmatch("([^=&]+)=([^=&]+)") do
+          if v == "false" then v = false
+          elseif v == "true" then v = true
+          elseif tonumber(v) then v = tonumber(v) end
           params[k] = v
         end
       end
