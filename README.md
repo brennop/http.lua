@@ -20,3 +20,18 @@ function that returns either a message, or a table with a status and a body.
 `http.listen(3000)`
 
 Starts the http server listening on port (default is 3000)
+
+## Example
+
+```lua
+local http = require "server"
+
+http
+  .get("/", function()
+    return "hello world"
+  end)
+  .get("/(%w+)", function(req, name)
+    return "hello " .. name
+  end)
+  .listen(3000)
+```

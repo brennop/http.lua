@@ -84,10 +84,10 @@ local function handle_client(client)
 end
 
 function http.listen(port)
-  local server = nil
+  local server, port = nil, port or 3000
 
   while not server do
-    server = socket.bind("*", port or 3000)
+    server = socket.bind("*", port)
     port = port + 1
   end
 
