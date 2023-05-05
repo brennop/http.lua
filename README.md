@@ -24,7 +24,7 @@ Starts the http server listening on port (default is 3000)
 ## Example
 
 ```lua
-local http = require "server"
+local http = require "http"
 
 http
   .get("/", function()

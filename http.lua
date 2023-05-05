@@ -25,6 +25,7 @@
 --
 
 local socket = require "socket"
+local copas = require "copas"
 
 local http = { handlers = { } }
 
@@ -103,10 +104,9 @@ function http.listen(port)
 
   print("Server listening on port " .. port - 1)
 
-  while true do
-    local client = server:accept()
+  copas.addserver(server, function(skt)
+    client = copas.wrap(skt)
 
-    client:settimeout(5)
     local ok, err = pcall(handle_client, client)
 
     if not ok then
@@ -115,7 +115,9 @@ function http.listen(port)
     end
 
     client:close()
-  end
+  end)
+
+  copas()
 end
 
 function http.get(pattern, handler)
