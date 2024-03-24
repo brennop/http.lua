@@ -28,6 +28,8 @@ local socket = require "socket"
 
 local http = { handlers = { } }
 
+local SEND_SIZE = 32
+
 local messages = {
   [200] = "OK",
   [404] = "Not Found",
@@ -73,12 +75,22 @@ local function serialize(data)
   return table.concat(response, "\r\n")
 end
 
+local index = 1
 local function handle_client(client)
+  local time = socket.gettime()
+  local id = index
+
+  index = index + 1
+
   local pattern, version = 
     client:receive():match("(%u+%s[%p%w]+)%s(HTTP/1.1)")
 
+  coroutine.yield()
+
   -- ignore headers for now
   for line in function() client:receive() end do end
+
+  coroutine.yield()
 
   local data = match_handler(pattern)
 
@@ -90,8 +102,17 @@ local function handle_client(client)
     response = serialize({ status = 200, body = data })
   end
 
-  client:send(response)
+  for i = 1, #response, SEND_SIZE do
+    coroutine.yield()
+    client:send(response:sub(i, i + SEND_SIZE - 1))
+  end
+
+  print("Request took " .. (socket.gettime() - time) .. " seconds")
+
+  client:close()
 end
+
+local coroutines = { }
 
 function http.listen(port)
   local server, port = nil, port or 3000
@@ -103,18 +124,45 @@ function http.listen(port)
 
   print("Server listening on port " .. port - 1)
 
+  server:settimeout(0)
+
   while true do
     local client = server:accept()
 
-    client:settimeout(5)
-    local ok, err = pcall(handle_client, client)
+    if client then
+      -- add to coroutines
+      local co = coroutine.create(handle_client)
 
-    if not ok then
-      -- TODO: log errors
-      client:send(serialize({ status = 500, body = err }))
+      -- start coroutine
+      coroutine.resume(co, client)
+
+      -- enqueue coroutine
+      table.insert(coroutines, co)
+      -- while coroutine.status(co) ~= "dead" do
+      --   coroutine.resume(co)
+      -- end
     end
 
-    client:close()
+    -- pop coroutine
+    local co = table.remove(coroutines, 1)
+    if co then
+      coroutine.resume(co)
+
+      -- check if coroutine is done
+      if coroutine.status(co) ~= "dead" then
+        table.insert(coroutines, co)
+      end
+    end
+
+    -- client:settimeout(5)
+    -- local ok, err = pcall(handle_client, client)
+
+    -- if not ok then
+    --   -- TODO: log errors
+    --   client:send(serialize({ status = 500, body = err }))
+    -- end
+
+    -- client:close()
   end
 end
 
