@@ -75,46 +75,68 @@ local function serialize(data)
   return table.concat(response, "\r\n")
 end
 
-local index = 1
-local function handle_client(client)
-  local time = socket.gettime()
-  local id = index
+function http:receive(client)
+  local buffer = ""
 
-  index = index + 1
+  while true do
+    local data, err, partial = client:receive(8)
 
-  local pattern, version = 
-    client:receive():match("(%u+%s[%p%w]+)%s(HTTP/1.1)")
+    if data then
+      buffer = buffer .. data
+    elseif err == "closed" then
+      break
+    elseif err == "timeout" then
+      buffer = buffer .. partial
+    end
 
-  coroutine.yield()
+    if buffer:sub(-4) == "\r\n\r\n" then
+      break
+    end
 
-  -- ignore headers for now
-  for line in function() client:receive() end do end
-
-  coroutine.yield()
-
-  local data = match_handler(pattern)
-
-  local response = ""
-
-  if type(data) == "table" then
-    response = serialize(data)
-  else
-    response = serialize({ status = 200, body = data })
-  end
-
-  for i = 1, #response, SEND_SIZE do
+    -- FIXME: we could yield the buffer to the consumer coroutine
+    -- and start handling the request before the whole buffer is
+    -- received
     coroutine.yield()
-    client:send(response:sub(i, i + SEND_SIZE - 1))
   end
 
-  print("Request took " .. (socket.gettime() - time) .. " seconds")
+  table.insert(self.sendt, client)
 
-  client:close()
+  -- swap the socket with the last one
+  local index = self.rindexes[tostring(client)]
+  local last = #self.recvt
+  self.recvt[index] = self.recvt[last]
+  self.recvt[last] = nil
+  self.rindexes[tostring(self.recvt[index])] = index
+
+  -- create a new coroutine to handle the request
+  local handler = coroutine.create(function() self:send(client) end)
+
+  -- save index to remove later
+  self.sindexes[tostring(client)] = #self.sendt
+
+  -- save handler to run later
+  self.senders[tostring(client)] = handler
 end
 
-local coroutines = { }
+function http:send(client)
+  local response = serialize({ status = 200, body = "Hello World" })
 
-function http.listen(port)
+  for i = 1, #response, SEND_SIZE do
+    client:send(response:sub(i, i + SEND_SIZE - 1))
+    coroutine.yield()
+  end
+
+  client:close()
+
+  -- swap the socket with the last one
+  local index = self.sindexes[tostring(client)]
+  local last = #self.sendt
+  self.sendt[index] = self.sendt[last]
+  self.sendt[last] = nil
+  self.sindexes[tostring(self.sendt[index])] = index
+end
+
+function http:listen(port)
   local server, port = nil, port or 3000
 
   while not server do
@@ -122,53 +144,79 @@ function http.listen(port)
     port = port + 1
   end
 
+  server:settimeout(0)
   print("Server listening on port " .. port - 1)
 
-  server:settimeout(0)
+  -- list of sockets for socket.select
+  self.recvt = { server }
+  self.sendt = { }
+
+  -- coroutines
+  self.receivers = { }
+  self.senders = { }
+
+  -- map ids to sockets
+  self.rindexes = { }
+  self.sindexes = { }
 
   while true do
-    local client = server:accept()
+	  local readable, writable, err = socket.select(self.recvt, self.sendt, 0)
 
-    if client then
-      -- add to coroutines
-      local co = coroutine.create(handle_client)
+    -- handle readable sockets
+    for _, socket in ipairs(readable) do
+      if socket == server then
+        local client, err = server:accept()
 
-      -- start coroutine
-      coroutine.resume(co, client)
+        if client then
+          client:settimeout(0)
 
-      -- enqueue coroutine
-      table.insert(coroutines, co)
-      -- while coroutine.status(co) ~= "dead" do
-      --   coroutine.resume(co)
-      -- end
-    end
+          local index = #self.recvt + 1
+          self.recvt[index] = client
 
-    -- pop coroutine
-    local co = table.remove(coroutines, 1)
-    if co then
-      coroutine.resume(co)
+          local handler = coroutine.create(function() self:receive(client) end)
 
-      -- check if coroutine is done
-      if coroutine.status(co) ~= "dead" then
-        table.insert(coroutines, co)
+          -- save index to remove later
+          self.rindexes[tostring(client)] = index
+
+          -- save handler to run later
+          self.receivers[tostring(client)] = handler
+        end
+      else
+        -- socket is a client ready to be read
+        local handler = self.receivers[tostring(socket)]
+
+        -- TODO: check if is necessary
+        if handler == nil then break end
+
+        local ok, err = coroutine.resume(handler)
+
+        -- TODO: handle errors
+        if not ok then
+          error("recv Error: "..err)
+        end
+
+        if coroutine.status(handler) == "dead" then
+          self.receivers[tostring(socket)] = nil
+        end
       end
     end
 
-    -- client:settimeout(5)
-    -- local ok, err = pcall(handle_client, client)
+    -- handle writable sockets
+    for _, socket in ipairs(writable) do
+      local handler = self.senders[tostring(socket)]
 
-    -- if not ok then
-    --   -- TODO: log errors
-    --   client:send(serialize({ status = 500, body = err }))
-    -- end
+      local ok, err = coroutine.resume(handler)
 
-    -- client:close()
+      if not ok then
+        error("sending Error: "..err)
+      end
+
+      if coroutine.status(handler) == "dead" then
+        self.senders[tostring(socket)] = nil
+      end
+    end
   end
 end
 
-function http.get(pattern, handler)
-  http.handlers["GET " .. pattern] = handler
-  return http
-end
-
-return http
+http:listen(3000)
+-- return http
