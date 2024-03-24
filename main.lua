@@ -1,10 +1,10 @@
 local http = require "http"
 
 http
-  .get("/", function()
+  :handle("GET /", function()
     return ""
   end)
-  .get("/(%w+)", function(req, name)
+  :handle("GET /(%w+)", function(req, name)
     return "hello " .. name
   end)
-  .listen(3000)
+  :listen(3000)

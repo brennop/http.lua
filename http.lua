@@ -36,8 +36,8 @@ local messages = {
   [500] = "Internal Server Error",
 }
 
-local function match_handler(pattern)
-  for key, handler in pairs(http.handlers) do
+function http:match_handler(pattern)
+  for key, handler in pairs(self.handlers) do
     local path, query = pattern:match("([^%?]+)%?(.*)$")
     local match = (path or pattern):match(key .. "$")
     if match then
@@ -109,7 +109,7 @@ function http:receive(client)
   self.rindexes[tostring(self.recvt[index])] = index
 
   -- create a new coroutine to handle the request
-  local handler = coroutine.create(function() self:send(client) end)
+  local handler = coroutine.create(function() self:send(client, buffer) end)
 
   -- save index to remove later
   self.sindexes[tostring(client)] = #self.sendt
@@ -118,8 +118,20 @@ function http:receive(client)
   self.senders[tostring(client)] = handler
 end
 
-function http:send(client)
-  local response = serialize({ status = 200, body = "Hello World" })
+function http:send(client, buffer)
+  print(buffer)
+  local pattern, version = 
+      buffer:match("(%u+%s[%p%w]+)%s(HTTP/1.1)\r\n")
+
+  local data = self:match_handler(pattern)
+
+  local response = ""
+
+  if type(data) == "table" then
+    response = serialize(data)
+  else
+    response = serialize({ status = 200, body = data })
+  end
 
   for i = 1, #response, SEND_SIZE do
     client:send(response:sub(i, i + SEND_SIZE - 1))
@@ -218,5 +230,9 @@ function http:listen(port)
   end
 end
 
-http:listen(3000)
--- return http
+function http:handle(pattern, handler)
+  self.handlers[pattern] = handler
+  return self
+end
+
+return http
