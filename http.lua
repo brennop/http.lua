@@ -25,6 +25,7 @@
 --
 
 local socket = require "socket"
+local parser = require "parser"
 
 local http = { handlers = { } }
 
@@ -78,52 +79,37 @@ end
 function http:receive(client)
   local buffer = ""
 
+  local parse = coroutine.create(parser)
+  local request = nil
+
   while true do
-    local data, err, partial = client:receive(8)
+    local data, err, partial = client:receive(128)
 
-    if data then
-      buffer = buffer .. data
-    elseif err == "closed" then
-      break
-    elseif err == "timeout" then
-      buffer = buffer .. partial
-    end
+    -- TODO: handle errors
 
-    if buffer:sub(-4) == "\r\n\r\n" then
+    local ok, result = coroutine.resume(parse, data or partial)
+
+    if result then
+      request = result
       break
     end
 
-    -- FIXME: we could yield the buffer to the consumer coroutine
-    -- and start handling the request before the whole buffer is
-    -- received
     coroutine.yield()
   end
 
-  table.insert(self.sendt, client)
+  self:remove_socket(client, self.rindexes, self.recvt)
 
-  -- swap the socket with the last one
-  local index = self.rindexes[tostring(client)]
-  local last = #self.recvt
-  self.recvt[index] = self.recvt[last]
-  self.recvt[last] = nil
-  self.rindexes[tostring(self.recvt[index])] = index
-
-  -- create a new coroutine to handle the request
-  local handler = coroutine.create(function() self:send(client, buffer) end)
+  self.sendt[#self.sendt + 1] = client
 
   -- save index to remove later
   self.sindexes[tostring(client)] = #self.sendt
 
   -- save handler to run later
-  self.senders[tostring(client)] = handler
+  self.senders[tostring(client)] = coroutine.create(function() self:send(client, request) end)
 end
 
-function http:send(client, buffer)
-  print(buffer)
-  local pattern, version = 
-      buffer:match("(%u+%s[%p%w]+)%s(HTTP/1.1)\r\n")
-
-  local data = self:match_handler(pattern)
+function http:send(client, request)
+  local data = self:match_handler(request.pattern)
 
   local response = ""
 
@@ -140,12 +126,15 @@ function http:send(client, buffer)
 
   client:close()
 
-  -- swap the socket with the last one
-  local index = self.sindexes[tostring(client)]
-  local last = #self.sendt
-  self.sendt[index] = self.sendt[last]
-  self.sendt[last] = nil
-  self.sindexes[tostring(self.sendt[index])] = index
+  self:remove_socket(client, self.sindexes, self.sendt)
+end
+
+function http:remove_socket(socket, indexes, list)
+  local index = indexes[tostring(socket)]
+  local last = #list
+  list[index] = list[last]
+  list[last] = nil
+  indexes[tostring(list[index])] = index
 end
 
 function http:listen(port)
@@ -182,16 +171,13 @@ function http:listen(port)
         if client then
           client:settimeout(0)
 
-          local index = #self.recvt + 1
-          self.recvt[index] = client
-
-          local handler = coroutine.create(function() self:receive(client) end)
+          self.recvt[#self.recvt + 1] = client
 
           -- save index to remove later
-          self.rindexes[tostring(client)] = index
+          self.rindexes[tostring(client)] = #self.recvt
 
           -- save handler to run later
-          self.receivers[tostring(client)] = handler
+          self.receivers[tostring(client)] = coroutine.create(function() self:receive(client) end)
         end
       else
         -- socket is a client ready to be read
