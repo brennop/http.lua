@@ -37,21 +37,23 @@ local messages = {
   [500] = "Internal Server Error",
 }
 
-function http:match_handler(pattern)
+function http:match_handler(request)
+  local pattern = request.pattern
   for key, handler in pairs(self.handlers) do
     local path, query = pattern:match("([^%?]+)%?(.*)$")
     local match = (path or pattern):match(key .. "$")
     if match then
-      local params = { }
+      -- TODO: move to parser
+      request.params = { }
       if query then
         for k, v in query:gmatch("([^=&]+)=([^=&]+)") do
           if v == "false" then v = false
           elseif v == "true" then v = true
           elseif tonumber(v) then v = tonumber(v) end
-          params[k] = v
+          request.params[k] = v
         end
       end
-      return handler(params, match)
+      return handler(request, match)
     end
   end
 
@@ -109,7 +111,7 @@ function http:receive(client)
 end
 
 function http:send(client, request)
-  local data = self:match_handler(request.pattern)
+  local data = self:match_handler(request)
 
   local response = ""
 
