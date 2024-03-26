@@ -69,7 +69,9 @@ function parser(data)
 
   -- parse body
   if headers["Content-Length"] then
-    while #data - 2 < tonumber(headers["Content-Length"]) do
+    local length = tonumber(headers["Content-Length"])
+
+    while #data - 2 < length do
       data = data .. coroutine.yield()
     end
 

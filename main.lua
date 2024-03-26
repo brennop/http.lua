@@ -17,44 +17,6 @@ local head = {
   }
 }
 
-local function each(tbl, fn)
-  local results = {}
-  for i, v in ipairs(tbl) do
-    results[i] = fn(v)
-  end
-  return table.concat(results)
-end
-
-local function messageMarkup(message)
-  local template = [[
-    <li>
-      <p>author: %s</p>
-      <p>%s</p>
-    </li>
-  ]]
-
-  return template:format(message.author, message.message)
-end
-
-local function thread(name, messages)
-  return html {
-    title = name,
-    head = head,
-    body = string.format([[
-      <main>
-        <h1>thread: %s</h1>
-        <form hx-post="/%s" hx-target="ul" hx-swap="afterbegin">
-          <input type="text" name="author" placeholder="author">
-          <textarea name="message" placeholder="message"></textarea>
-          <button type="submit">post</button>
-        </form>
-        <ul>
-          %s
-        </ul>
-      ]], name, name, each(messages, messageMarkup))
-  }
-end
-
 -- message board thread
 local threads = {
   gaming = {
@@ -87,15 +49,36 @@ http
     if not messages then
       return html {
         title = "plum board",
-        body = [[
-        <main>
-          <p>thread not found</p>
-        </main>
-        ]]
+        body = markup.main {
+          markup.p { "thread not found" }
+        }
       }
     end
 
-    return thread(name, messages)
+    return html {
+      title = name,
+      head = head,
+      body = markup.main {
+        markup.h1 { "thread: " .. name },
+        markup.form {
+          ["hx-post"] = "/" .. name,
+          ["hx-target"] = "ul",
+          ["hx-swap"] = "afterbegin",
+          markup.input { type = "text", name = "author", placeholder = "author" },
+          markup.textarea { name = "message", placeholder = "message" },
+          markup.button { type = "submit", "post" }
+        },
+        markup.ul {
+          markup.each {
+            data = messages,
+            template = markup.li {
+              markup.p { "author: $author" },
+              markup.p { "$message" }
+            }
+          }
+        }
+      }
+    }
   end)
   :handle("POST /(%w+)", function(request, name)
     local author, message = request.body:match("author=(.*)&message=(.*)")
@@ -109,16 +92,17 @@ http
     if not messages then
       return html {
         title = "plum board",
-        body = [[
-        <main>
-          <p>thread not found</p>
-        </main>
-        ]]
+        body = markup.main {
+          markup.p { "thread not found" }
+        }
       }
     end
 
     messages[#messages + 1] = { author = author, message = message }
 
-    return messageMarkup { author = author, message = message }
+    return markup.li {
+      markup.p { "author: " .. author },
+      markup.p { message }
+    }:render()
   end)
   :listen(3000)

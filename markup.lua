@@ -32,14 +32,39 @@ setmetatable(m, {
         children = {data}
       end
 
-      return {tag = tag, attrs = attrs, children = children}
+      return {tag = tag, attrs = attrs, children = children, render = m.render}
     end
   end
 })
 
-function m.render(node)
+function m.each(node)
+  if not node.data then
+    error("missing data")
+  end
+
+  if not node.template then
+    error("missing template")
+  end
+
+  local children = {}
+  for i, item in ipairs(node.data) do
+    table.insert(children, m.render(node.template, {item = item}))
+  end
+
+  return table.concat(children)
+end
+
+function m.render(node, context)
   if type(node) == "string" then
+    if context then
+      local result, _ = node:gsub("%$(%w+)", context.item)
+      return result
+    end
     return node
+  end
+
+  if node.tag == "each" then
+    return m.each(node)
   end
 
   local attrs = {}
@@ -52,7 +77,7 @@ function m.render(node)
   end
   local children = {}
   for _, child in ipairs(node.children) do
-    table.insert(children, m.render(child))
+    table.insert(children, m.render(child, context))
   end
 
   if node.tag == "fragment" then
