@@ -1,6 +1,38 @@
 local http = require "http"
 local markup = require "markup"
 
+local function write(data, file)
+  if type(data) == "number" then 
+    file:write(data)
+  elseif type(data) == "string" then
+    file:write(string.format("%q", data))
+  elseif type(data) == "table" then
+    file:write("{")
+    for k, v in pairs(data) do
+      if type(k) == "number" then
+        file:write("[", k, "] = ")
+      else
+        file:write(k, " = ")
+      end
+      write(v, file)
+      file:write(", ")
+    end
+    file:write("}")
+  end
+end
+
+local function open(name)
+  local file = io.open(name, "r")
+  if not file then
+    return {}
+  end
+  local data = file:read "*a"
+  local ok, result = pcall(loadstring("return " .. data))
+  return ok and result or {}
+end
+
+local threads = open("/tmp/db")
+
 local html = markup.html
 
 local head = { 
@@ -17,30 +49,24 @@ local head = {
   }
 }
 
--- message board thread
-local threads = {
-  gaming = {
-    { author = "player1", message = "hello world" },
-    { author = "player2", message = "hello player1" },
-  },
-  programming = {},
-}
-
 http
   :handle("GET /", function()
     return html {
       title = "plum board",
       head = head,
-      body = [[
-      <main>
-        <h1>welcome to plum board</h1>
-        <p>threads:</p>
-        <ul>
-          <li><a href="/gaming">gaming</a></li>
-          <li><a href="/programming">programming</a></li>
-        </ul>
-      </main>
-      ]]
+      body = markup.main {
+        markup.h1 { "welcome to plum board" },
+        markup.p { "threads:" },
+        markup.ul {
+          ["hx-boost"] = "true",
+          markup.each {
+            data = threads,
+            template = markup.li {
+              markup.a { href = "/$key", "$key" }
+            }
+          }
+        }
+      }
     }
   end)
   :handle("GET /(%w+)", function(request, name)
@@ -80,8 +106,10 @@ http
       }
     }
   end)
+  -- Handle new post
   :handle("POST /(%w+)", function(request, name)
     local author, message = request.body.author, request.body.message
+    local timestamp = os.time()
 
     if not author or not message then
       return { status = 400, body = "bad request" }
@@ -99,6 +127,8 @@ http
     end
 
     messages[#messages + 1] = { author = author, message = message }
+
+    write(threads, io.open("/tmp/db", "w"))
 
     return markup.li {
       markup.p { "author: " .. author },

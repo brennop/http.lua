@@ -47,8 +47,13 @@ function m.each(node)
   end
 
   local children = {}
-  for i, item in ipairs(node.data) do
-    table.insert(children, m.render(node.template, {item = item}))
+
+  for key, item in pairs(node.data) do
+    local context = { key = key }
+
+    for k, v in pairs(item) do context[k] = v end
+
+    table.insert(children, m.render(node.template, context))
   end
 
   return table.concat(children)
@@ -57,7 +62,7 @@ end
 function m.render(node, context)
   if type(node) == "string" then
     if context then
-      local result, _ = node:gsub("%$(%w+)", context.item)
+      local result, _ = node:gsub("%$(%w+)", context)
       return result
     end
     return node
@@ -72,6 +77,10 @@ function m.render(node, context)
     if v == true then
       attrs[#attrs + 1] = string.format(" %s", k)
     else
+      if context then
+        v = v:gsub("%$(%w+)", context)
+      end
+
       attrs[#attrs + 1] = string.format(' %s="%s"', k, v)
     end
   end
