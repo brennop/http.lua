@@ -25,7 +25,6 @@
 --
 
 local socket = require "socket"
-local parser = require "parser"
 
 local http = { handlers = { } }
 
@@ -38,26 +37,46 @@ local messages = {
 }
 
 function http:match_handler(request)
-  local pattern = request.pattern
+  local path, query = request.pattern:match("([^%?]+)%?(.*)$")
   for key, handler in pairs(self.handlers) do
-    local path, query = pattern:match("([^%?]+)%?(.*)$")
-    local match = (path or pattern):match(key .. "$")
+    local match = (path or request.pattern):match(key .. "$")
     if match then
-      -- TODO: move to parser
-      request.params = { }
-      if query then
-        for k, v in query:gmatch("([^=&]+)=([^=&]+)") do
-          if v == "false" then v = false
-          elseif v == "true" then v = true
-          elseif tonumber(v) then v = tonumber(v) end
-          request.params[k] = v
-        end
-      end
       return handler(request, match)
     end
   end
 
   return { status = 404, body = "Not Found" }
+end
+
+function parser(data)
+  local headers, pattern, version, rest, body = {}
+
+  -- parse request line
+  while pattern == nil do
+    pattern, version, rest = data:match("(%u+%s[%p%w]+)%s(HTTP/1.1)\r\n(.*)")
+
+    data = rest or (data .. coroutine.yield())
+  end
+
+  -- parse headers
+  while not data:match("^\r\n(.*)") do
+    local key, value, rest = data:match("([%w%-]+):%s([%p%w]+)\r\n(.*)")
+
+    if key then headers[key] = value end
+    
+    data = rest or (data .. coroutine.yield())
+  end
+
+  -- parse body
+  if headers["Content-Length"] then
+    while #data - 2 < tonumber(headers["Content-Length"]) do
+      data = data .. coroutine.yield()
+    end
+
+    body = data:sub(3, length + 2)
+  end
+
+  return { pattern = pattern, version = version, headers = headers, body = body }
 end
 
 local function serialize(data)
@@ -79,8 +98,6 @@ local function serialize(data)
 end
 
 function http:receive(client)
-  local buffer = ""
-
   local parse = coroutine.create(parser)
   local request = nil
 
@@ -133,22 +150,21 @@ end
 
 function http:remove_socket(socket, indexes, list)
   local index = indexes[tostring(socket)]
-  local last = #list
-  list[index] = list[last]
-  list[last] = nil
-  indexes[tostring(list[index])] = index
+  indexes[tostring(list[#list])] = index
+  list[index], list[#list] = list[#list], nil
+end
+
+function tryBind(port)
+  local server = socket.bind("*", port)
+  if server then return server, port end
+  return tryBind(port + 1)
 end
 
 function http:listen(port)
-  local server, port = nil, port or 3000
-
-  while not server do
-    server = socket.bind("*", port)
-    port = port + 1
-  end
+  local server, port = tryBind(port)
 
   server:settimeout(0)
-  print("Server listening on port " .. port - 1)
+  print("Server listening on port " .. port)
 
   -- list of sockets for socket.select
   self.recvt = { server }
