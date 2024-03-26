@@ -3,7 +3,7 @@
 --
 -- MIT License
 --
--- Copyright (c) 2022 brennop
+-- Copyright (c) 2024 brennop
 --
 -- Permission is hereby granted, free of charge, to any person obtaining a copy
 -- of this software and associated documentation files (the "Software"), to deal
@@ -36,13 +36,22 @@ local messages = {
   [500] = "Internal Server Error",
 }
 
+local function decode_query(query)
+  if query == nil then return {} end
+
+  local form = {}
+
+  for key, value in query:gmatch "([^&]+)=([^&]+)" do
+    form[key] = value:gsub("%%(%x%x)", function(h) return string.char(tonumber(h, 16)) end)
+  end
+
+  return form
+end
+
 function http:match_handler(request)
-  local path, query = request.pattern:match("([^%?]+)%?(.*)$")
   for key, handler in pairs(self.handlers) do
-    local match = (path or request.pattern):match(key .. "$")
-    if match then
-      return handler(request, match)
-    end
+    local match = (request.path or request.pattern):match(key .. "$")
+    if match then return handler(request, match) end
   end
 
   return { status = 404, body = "Not Found" }
@@ -53,14 +62,17 @@ function parser(data)
 
   -- parse request line
   while pattern == nil do
-    pattern, version, rest = data:match("(%u+%s[%p%w]+)%s(HTTP/1.1)\r\n(.*)")
+    pattern, version, rest = data:match "(%u+%s[%p%w]+)%s(HTTP/1.1)\r\n(.*)"
 
     data = rest or (data .. coroutine.yield())
   end
 
+  local path, query_string = pattern:match "([^%?]+)%?(.*)$"
+  local query = decode_query(query_string)
+
   -- parse headers
-  while not data:match("^\r\n(.*)") do
-    local key, value, rest = data:match("([%w%-]+):%s([%p%w]+)\r\n(.*)")
+  while not data:match "^\r\n(.*)" do
+    local key, value, rest = data:match "([%w%-]+):%s([%p%w]+)\r\n(.*)"
 
     if key then headers[key] = value end
     
@@ -76,12 +88,20 @@ function parser(data)
     end
 
     body = data:sub(3, length + 2)
+
+    if headers["Content-Type"] == "application/x-www-form-urlencoded" then
+      body = decode_query(body)
+    end
   end
 
-  return { pattern = pattern, version = version, headers = headers, body = body }
+  return { pattern = pattern, version = version, headers = headers, body = body, query = query, path = path }
 end
 
 local function serialize(data)
+  if type(data) == "string" then 
+    data = { status = 200, body = data }
+  end
+
   local message = messages[data.status] or "Unknown"
 
   local headers = {
@@ -99,24 +119,22 @@ local function serialize(data)
   return table.concat(response, "\r\n")
 end
 
+local function try_parse(client, parse)
+  local data, err, partial = client:receive(128)
+
+  -- TODO: handle errors
+
+  local result = parse(data or partial)
+
+  if result then return result end
+
+  coroutine.yield()
+
+  return try_parse(client, parse)
+end
+
 function http:receive(client)
-  local parse = coroutine.create(parser)
-  local request = nil
-
-  while true do
-    local data, err, partial = client:receive(128)
-
-    -- TODO: handle errors
-
-    local ok, result = coroutine.resume(parse, data or partial)
-
-    if result then
-      request = result
-      break
-    end
-
-    coroutine.yield()
-  end
+  local request = try_parse(client, coroutine.wrap(parser))
 
   self:remove_socket(client, self.rindexes, self.recvt)
 
@@ -132,13 +150,7 @@ end
 function http:send(client, request)
   local data = self:match_handler(request)
 
-  local response = ""
-
-  if type(data) == "table" then
-    response = serialize(data)
-  else
-    response = serialize({ status = 200, body = data })
-  end
+  local response = serialize(data)
 
   for i = 1, #response, SEND_SIZE do
     client:send(response:sub(i, i + SEND_SIZE - 1))
@@ -156,14 +168,14 @@ function http:remove_socket(socket, indexes, list)
   list[index], list[#list] = list[#list], nil
 end
 
-function tryBind(port)
+function try_bind(port)
   local server = socket.bind("*", port)
   if server then return server, port end
-  return tryBind(port + 1)
+  return try_bind(port + 1)
 end
 
 function http:listen(port)
-  local server, port = tryBind(port)
+  local server, port = try_bind(port)
 
   server:settimeout(0)
   print("Server listening on port " .. port)

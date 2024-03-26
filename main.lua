@@ -81,7 +81,7 @@ http
     }
   end)
   :handle("POST /(%w+)", function(request, name)
-    local author, message = request.body:match("author=(.*)&message=(.*)")
+    local author, message = request.body.author, request.body.message
 
     if not author or not message then
       return { status = 400, body = "bad request" }
