@@ -28,7 +28,8 @@ local socket = require "socket"
 
 local http = { handlers = { } }
 
-local SEND_SIZE = 32
+local SEND_SIZE = 128
+local RECV_SIZE = 128
 
 local messages = {
   [200] = "OK",
@@ -120,7 +121,7 @@ local function serialize(data)
 end
 
 local function try_parse(client, parse)
-  local data, err, partial = client:receive(128)
+  local data, err, partial = client:receive(RECV_SIZE)
 
   -- TODO: handle errors
 
@@ -193,7 +194,7 @@ function http:listen(port)
   self.sindexes = { }
 
   while true do
-	  local readable, writable, err = socket.select(self.recvt, self.sendt, 0)
+	  local readable, writable, err = socket.select(self.recvt, self.sendt)
 
     -- handle readable sockets
     for _, socket in ipairs(readable) do
