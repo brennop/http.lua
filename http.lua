@@ -170,7 +170,7 @@ function http:remove_socket(socket, indexes, list)
 end
 
 function try_bind(port)
-  local server = socket.bind("*", port)
+  local server = socket.bind("*", port, 128)
   if server then return server, port end
   return try_bind(port + 1)
 end
