@@ -28,8 +28,10 @@ local socket = require "socket"
 
 local http = { handlers = { } }
 
-local SEND_SIZE = 4096
-local RECV_SIZE = 4096
+local SEND_SIZE = 64
+local RECV_SIZE = 64
+local MAX_ACCEPTS = 32
+local MAX_CLIENTS = 32
 
 local messages = {
   [200] = "OK",
@@ -186,7 +188,7 @@ function http:listen(port)
   print("Server listening on port " .. port)
 
   -- list of sockets for socket.select
-  self.recvt = { server }
+  self.recvt = { }
   self.sendt = { }
 
   -- coroutines
@@ -197,47 +199,56 @@ function http:listen(port)
   self.rindexes = { }
   self.sindexes = { }
 
+  local ready = { }
+
   while true do
-	  local readable, writable, err = socket.select(self.recvt, self.sendt)
+    local read_set = { server }
+    for _, task in ipairs(ready) do table.insert(read_set, task.sock) end
 
-    -- handle readable sockets
-    for _, socket in ipairs(readable) do
-      if socket == server then
-        local client, err = server:accept()
+	  local readable, writable, err = socket.select(read_set, self.sendt)
 
-        if client then
-          client:settimeout(0)
+    for i = 1, MAX_ACCEPTS do
+      local client, err = server:accept()
 
-          self.recvt[#self.recvt + 1] = client
+      if not client then break end
+      client:settimeout(0)
 
-          -- save index to remove later
-          self.rindexes[tostring(client)] = #self.recvt
+      self.recvt[#self.recvt + 1] = client
 
-          -- save handler to run later
-          self.receivers[tostring(client)] = coroutine.create(function() self:receive(client) end)
-        end
-      else
-        -- socket is a client ready to be read
-        local handler = self.receivers[tostring(socket)]
+      -- save index to remove later
+      self.rindexes[tostring(client)] = #self.recvt
 
-        -- TODO: check if is necessary
-        if handler == nil then break end
+      local co = coroutine.create(function() self:receive(client) end)
 
-        local ok, err = coroutine.resume(handler)
+      table.insert(ready, { co = co, sock = client })
+    end
 
-        -- TODO: handle errors
+    local i = 1
+    local resumed = 0
+    while resumed < MAX_CLIENTS and i <= #ready do
+      local task = ready[i]
+
+      if readable[task.sock] then
+        resumed = resumed + 1
+        local ok, err = coroutine.resume(task.co)
+
         if not ok then
           error("recv Error: "..err)
+        elseif coroutine.status(task.co) == "dead" then
+          table.remove(ready, i)
+        else
+          table.remove(ready, i)
+          table.insert(ready, task)
         end
-
-        if coroutine.status(handler) == "dead" then
-          self.receivers[tostring(socket)] = nil
-        end
+      else
+        i = i + 1
       end
     end
 
     -- handle writable sockets
-    for _, socket in ipairs(writable) do
+    for i = 1, math.min(8, #writable) do
+      local socket = writable[i]
+
       local handler = self.senders[tostring(socket)]
 
       local ok, err = coroutine.resume(handler)
