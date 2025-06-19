@@ -28,8 +28,8 @@ local socket = require "socket"
 
 local http = { handlers = { } }
 
-local SEND_SIZE = 128
-local RECV_SIZE = 128
+local SEND_SIZE = 4096
+local RECV_SIZE = 4096
 
 local messages = {
   [200] = "OK",
@@ -77,6 +77,8 @@ function parser(data)
 
     if key then headers[key] = value end
     
+    -- if rest is nil, then we don't have enough data. yield control and wait
+    -- till more data is read
     data = rest or (data .. coroutine.yield())
   end
 
@@ -84,9 +86,7 @@ function parser(data)
   if headers["Content-Length"] then
     local length = tonumber(headers["Content-Length"])
 
-    while #data - 2 < length do
-      data = data .. coroutine.yield()
-    end
+    while #data - 2 < length do data = data .. coroutine.yield() end
 
     body = data:sub(3, length + 2)
 
@@ -135,6 +135,8 @@ local function try_parse(client, parse)
 end
 
 function http:receive(client)
+  coroutine.yield()
+
   local request = try_parse(client, coroutine.wrap(parser))
 
   self:remove_socket(client, self.rindexes, self.recvt)
@@ -149,6 +151,8 @@ function http:receive(client)
 end
 
 function http:send(client, request)
+  coroutine.yield()
+
   local data = self:match_handler(request)
 
   local response = serialize(data)
