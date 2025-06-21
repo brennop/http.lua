@@ -28,8 +28,10 @@ local socket = require "socket"
 
 local http = { handlers = { } }
 
-local SEND_SIZE = 128
-local RECV_SIZE = 128
+local SEND_SIZE = 32
+local RECV_SIZE = 32
+local MAX_ACCEPTS = 16
+local MAX_CLIENTS = 16
 
 local messages = {
   [200] = "OK",
@@ -76,7 +78,7 @@ function parser(data)
     local key, value, rest = data:match "([%w%-]+):%s([%p%w]+)\r\n(.*)"
 
     if key then headers[key] = value end
-    
+
     data = rest or (data .. coroutine.yield())
   end
 
@@ -178,21 +180,24 @@ function http:listen(port)
 
     local readable, writable, err = socket.select(read_set, write_set)
 
-    while true do
+    for i = 1, MAX_ACCEPTS do
       local client, err = server:accept()
 
       if not client then break end
 
       client:settimeout(0)
-      print(client)
 
       -- save handler to run later
       self.receivers[client] = coroutine.create(function() self:receive(client) end)
     end
 
+    local resumed = 0
     -- handle readable sockets
     for _, socket in ipairs(readable) do
+      if resumed > MAX_CLIENTS then break end
+
       if socket ~= server then
+        resumed = resumed + 1
 
         -- socket is a client ready to be read
         local handler = self.receivers[socket]
@@ -207,8 +212,13 @@ function http:listen(port)
       end
     end
 
+    local resumed = 0
     -- handle writable sockets
     for _, socket in ipairs(writable) do
+      if resumed > MAX_CLIENTS then break end
+
+      resumed = resumed + 1
+
       local handler = self.senders[socket]
 
       local ok, err = coroutine.resume(handler)
