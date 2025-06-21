@@ -137,15 +137,7 @@ end
 function http:receive(client)
   local request = try_parse(client, coroutine.wrap(parser))
 
-  self:remove_socket(client, self.rindexes, self.recvt)
-
-  self.sendt[#self.sendt + 1] = client
-
-  -- save index to remove later
-  self.sindexes[tostring(client)] = #self.sendt
-
-  -- save handler to run later
-  self.senders[tostring(client)] = coroutine.create(function() self:send(client, request) end)
+  self.senders[client] = coroutine.create(function() self:send(client, request) end)
 end
 
 function http:send(client, request)
@@ -159,14 +151,6 @@ function http:send(client, request)
   end
 
   client:close()
-
-  self:remove_socket(client, self.sindexes, self.sendt)
-end
-
-function http:remove_socket(socket, indexes, list)
-  local index = indexes[tostring(socket)]
-  indexes[tostring(list[#list])] = index
-  list[index], list[#list] = list[#list], nil
 end
 
 function try_bind(port)
@@ -181,69 +165,58 @@ function http:listen(port)
   server:settimeout(0)
   print("Server listening on port " .. port)
 
-  -- list of sockets for socket.select
-  self.recvt = { server }
-  self.sendt = { }
-
   -- coroutines
   self.receivers = { }
   self.senders = { }
 
-  -- map ids to sockets
-  self.rindexes = { }
-  self.sindexes = { }
-
   while true do
-	  local readable, writable, err = socket.select(self.recvt, self.sendt)
+    local read_set = { server }
+    local write_set = { }
+
+    for sock, _ in pairs(self.receivers) do read_set[#read_set + 1] = sock end -- everything in p
+    for sock, _ in pairs(self.senders) do write_set[#write_set + 1] = sock end -- erfect balanace
+
+    local readable, writable, err = socket.select(read_set, write_set)
+
+    while true do
+      local client, err = server:accept()
+
+      if not client then break end
+
+      client:settimeout(0)
+      print(client)
+
+      -- save handler to run later
+      self.receivers[client] = coroutine.create(function() self:receive(client) end)
+    end
 
     -- handle readable sockets
     for _, socket in ipairs(readable) do
-      if socket == server then
-        local client, err = server:accept()
+      if socket ~= server then
 
-        if client then
-          client:settimeout(0)
-
-          self.recvt[#self.recvt + 1] = client
-
-          -- save index to remove later
-          self.rindexes[tostring(client)] = #self.recvt
-
-          -- save handler to run later
-          self.receivers[tostring(client)] = coroutine.create(function() self:receive(client) end)
-        end
-      else
         -- socket is a client ready to be read
-        local handler = self.receivers[tostring(socket)]
-
-        -- TODO: check if is necessary
-        if handler == nil then break end
+        local handler = self.receivers[socket]
 
         local ok, err = coroutine.resume(handler)
 
-        -- TODO: handle errors
         if not ok then
           error("recv Error: "..err)
-        end
-
-        if coroutine.status(handler) == "dead" then
-          self.receivers[tostring(socket)] = nil
+        elseif coroutine.status(handler) == "dead" then
+          self.receivers[socket] = nil
         end
       end
     end
 
     -- handle writable sockets
     for _, socket in ipairs(writable) do
-      local handler = self.senders[tostring(socket)]
+      local handler = self.senders[socket]
 
       local ok, err = coroutine.resume(handler)
 
       if not ok then
         error("sending Error: "..err)
-      end
-
-      if coroutine.status(handler) == "dead" then
-        self.senders[tostring(socket)] = nil
+      elseif coroutine.status(handler) == "dead" then
+        self.senders[socket] = nil
       end
     end
   end
