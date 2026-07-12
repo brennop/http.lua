@@ -5,6 +5,8 @@ local kqueue = require "kqueue"
 
 local EVFILT_READ = -1
 local EVFILT_WRITE = -2
+local EV_ADD = 0x0001
+local EV_DELETE = 0x0002
 local EV_EOF = 0x8000
 
 local messages = {
@@ -44,7 +46,7 @@ local function parser(data)
   end
 
   local path, query_string = pattern:match "([^%?]+)%?(.*)$"
-  local query = decode_query(query_string)
+  -- local query = decode_query(query_string)
 
   -- parse headers
   while not data:match "^\r\n(.*)" do
@@ -113,9 +115,8 @@ end
 
 local function receive(client)
   while true do
-    local request = try_parse(client, coroutine.wrap(parser))
-    local data = serialize("hello world")
-    client:send(data)
+    local request = try_parse(client, parser)
+    kqueue:add(client:getfd(), EV_ADD, EVFILT_WRITE)
     coroutine.yield()
   end
 end
@@ -133,7 +134,7 @@ while true do
 
       if sock then
         sock:settimeout(0)
-        kqueue:add(sock:getfd())
+        kqueue:add(sock:getfd(), EV_ADD, EVFILT_READ)
 
         local co = coroutine.create(function() receive(sock) end)
 
@@ -142,7 +143,7 @@ while true do
 
     elseif bit.band(event.flags, EV_EOF) > 0 then
       client.sock:close()
-      kqueue:del(event.ident)
+      -- clients[fd] = nil
     elseif event.filter == EVFILT_READ then
       local ok, err = coroutine.resume(client.co)
 
@@ -152,7 +153,9 @@ while true do
       --   client.co = coroutine.create(function() receive(client.sock) end)
       -- end
     elseif event.filter == EVFILT_WRITE then
-      print("TODO: handle write")
+      local data = serialize("hello world")
+      client.sock:send(data)
+      kqueue:add(fd, EV_DELETE, EVFILT_WRITE)
     end
   end
 end
