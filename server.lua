@@ -1,3 +1,5 @@
+#!/usr/bin/env luajit
+
 local socket = require "socket"
 local kqueue = require "kqueue"
 
@@ -10,6 +12,18 @@ local messages = {
   [404] = "Not Found",
   [500] = "Internal Server Error",
 }
+
+local function decode_query(query)
+  if query == nil then return {} end
+
+  local form = {}
+
+  for key, value in query:gmatch "([^&]+)=([^&]+)" do
+    form[key] = value:gsub("%%(%x%x)", function(h) return string.char(tonumber(h, 16)) end)
+  end
+
+  return form
+end
 
 local server = socket.bind("*", 3000, 128)
 local server_fd = server:getfd()
@@ -47,6 +61,8 @@ local function parser(data)
   if headers["Content-Length"] then
     local length = tonumber(headers["Content-Length"])
 
+    print(length)
+
     while #data - 2 < length do data = data .. coroutine.yield() end
 
     body = data:sub(3, length + 2)
@@ -60,7 +76,7 @@ local function parser(data)
 end
 
 local function try_parse(client, parse)
-  local data, err, partial = client:receive(nil)
+  local data, err, partial = client:receive(8192) -- This is to match luasockets bufsize
 
   -- TODO: handle errors
 
@@ -73,11 +89,6 @@ local function try_parse(client, parse)
   return try_parse(client, parse)
 end
 
-local function receive(client)
-  local request = try_parse(client, coroutine.wrap(parser))
-  return request
-end
-
 local function serialize(data)
   if type(data) == "string" then 
     data = { status = 200, body = data }
@@ -87,7 +98,7 @@ local function serialize(data)
 
   local headers = {
     "Content-Length: " .. #data.body,
-    "Connection: close",
+    "Connection: keep-alive",
   }
 
   local response = {
@@ -99,6 +110,16 @@ local function serialize(data)
 
   return table.concat(response, "\r\n")
 end
+
+local function receive(client)
+  while true do
+    local request = try_parse(client, coroutine.wrap(parser))
+    local data = serialize("hello world")
+    client:send(data)
+    coroutine.yield()
+  end
+end
+
 
 while true do
   local events = kqueue:poll() -- convert in a kqueue:loop call
@@ -121,16 +142,15 @@ while true do
 
     elseif bit.band(event.flags, EV_EOF) > 0 then
       client.sock:close()
-      print("eof")
       kqueue:del(event.ident)
     elseif event.filter == EVFILT_READ then
       local ok, err = coroutine.resume(client.co)
 
-      local data = serialize("hello world")
-      client.sock:send(data)
-      client.sock:close()
-
-      kqueue:del(event.ident)
+      -- if coroutine.status(client.co) == "dead" then
+      --   local data = serialize("hello world")
+      --   client.sock:send(data)
+      --   client.co = coroutine.create(function() receive(client.sock) end)
+      -- end
     elseif event.filter == EVFILT_WRITE then
       print("TODO: handle write")
     end

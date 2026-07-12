@@ -28,10 +28,10 @@ local socket = require "socket"
 
 local http = { handlers = { } }
 
-local SEND_SIZE = 64
-local RECV_SIZE = 64
-local MAX_ACCEPTS = 32
-local MAX_CLIENTS = 32
+local SEND_SIZE = 4096
+local RECV_SIZE = 4096
+local MAX_ACCEPTS = 64
+local MAX_CLIENTS = 64
 
 local messages = {
   [200] = "OK",
@@ -176,7 +176,7 @@ function http:remove_socket(socket, indexes, list)
 end
 
 function try_bind(port)
-  local server = socket.bind("*", port, 128)
+  local server = socket.bind("*", port, 256)
   if server then return server, port end
   return try_bind(port + 1)
 end
