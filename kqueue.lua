@@ -3,7 +3,7 @@ local ffi = require("ffi")
 local EV_ADD = 0x0001   
 local EV_DELETE = 0x0002 
 local EVFILT_READ = -1
-local MAX_EVENTS = 32
+local MAX_EVENTS = 128
 
 ffi.cdef[[
 struct kevent_t {

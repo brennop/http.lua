@@ -120,9 +120,8 @@ local function receive(client)
   end
 end
 
-
 while true do
-  local events = kqueue:poll() -- convert in a kqueue:loop call
+  local events = tonumber(kqueue:poll()) -- convert in a kqueue:loop call
   for i = 0, events - 1 do
     local event = kqueue.event_list[i]
     local fd = tonumber(event.ident)
@@ -140,20 +139,11 @@ while true do
 
         clients[sock:getfd()] = { sock = sock, co = co }
       end
-
     elseif bit.band(event.flags, EV_EOF) > 0 then
       client.sock:close()
       clients[fd] = nil
     elseif event.filter == EVFILT_READ then
       local ok, err = coroutine.resume(client.co)
-
-      -- if coroutine.status(client.co) == "dead" then
-      --   local data = serialize("hello world")
-      --   client.sock:send(data)
-      --   client.co = coroutine.create(function() receive(client.sock) end)
-      -- end
-    elseif event.filter == EVFILT_WRITE then
-      print("TODO: handle write")
     end
   end
 end
