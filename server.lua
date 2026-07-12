@@ -133,6 +133,7 @@ while true do
 
       if sock then
         sock:settimeout(0)
+        sock:setoption("tcp-nodelay", true)
         kqueue:add(sock:getfd())
 
         local co = coroutine.create(function() receive(sock) end)
@@ -142,7 +143,6 @@ while true do
 
     elseif bit.band(event.flags, EV_EOF) > 0 then
       client.sock:close()
-      kqueue:del(event.ident)
       clients[fd] = nil
     elseif event.filter == EVFILT_READ then
       local ok, err = coroutine.resume(client.co)
