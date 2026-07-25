@@ -44,7 +44,7 @@ local function parser(data)
   end
 
   local path, query_string = pattern:match "([^%?]+)%?(.*)$"
-  -- local query = decode_query(query_string)
+  local query = decode_query(query_string)
 
   -- parse headers
   while not data:match "^\r\n(.*)" do
@@ -60,8 +60,6 @@ local function parser(data)
   -- parse body
   if headers["Content-Length"] then
     local length = tonumber(headers["Content-Length"])
-
-    print(length)
 
     while #data - 2 < length do data = data .. coroutine.yield() end
 
@@ -114,7 +112,7 @@ end
 local function receive(client)
   while true do
     local request = try_parse(client, parser)
-    local data = serialize("hello world")
+    local data = serialize(request.body)
     client:send(data)
     coroutine.yield()
   end
@@ -144,6 +142,10 @@ while true do
       clients[fd] = nil
     elseif event.filter == EVFILT_READ then
       local ok, err = coroutine.resume(client.co)
+      if not ok then
+        client.sock:send(serialize { status = 500, body = err })
+        client.co = coroutine.create(function() receive(client) end)
+      end
     end
   end
 end
